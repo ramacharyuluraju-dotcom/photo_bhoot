@@ -67,8 +67,8 @@ if not st.session_state.student_auth:
     st.info("🔒 Please verify your identity to proceed.")
     
     with st.form("auth_form"):
-        usn_input = st.text_input("USN (University Serial Number)", placeholder="e.g., 1AM26EC001").strip().upper()
-        # Using Phone Number as the 2FA secret (You can change this to DOB based on your DB completeness)
+        usn_input = st.text_input("USN / Admission Number", placeholder="e.g., 1AM26EC001").strip().upper()
+        # 🟢 Using 'Contact' for 2FA validation
         phone_input = st.text_input("Registered Phone Number", placeholder="10-digit mobile number").strip()
         
         submitted = st.form_submit_button("Verify Identity", type="primary", use_container_width=True)
@@ -78,22 +78,27 @@ if not st.session_state.student_auth:
                 st.error("⚠️ Both fields are required.")
             else:
                 with st.spinner("Verifying records..."):
-                    res = supabase.table("master_students").select("usn, full_name, phone").eq("usn", usn_input).execute()
+                    # 🟢 FIX: Checking 'contact' instead of 'phone' to match DB Schema
+                    res = supabase.table("master_students").select("usn, full_name, contact").eq("usn", usn_input).execute()
+                    
+                    # If USN not found, fallback to checking admission_number for 1st years
+                    if not res.data:
+                        res = supabase.table("master_students").select("admission_number, full_name, contact").eq("admission_number", usn_input).execute()
                     
                     if not res.data:
-                        st.error("❌ USN not found in the master database.")
+                        st.error("❌ Student ID not found in the master database.")
                     else:
                         student_record = res.data[0]
-                        db_phone = str(student_record.get('phone', '')).strip()
+                        db_phone = str(student_record.get('contact', '')).strip()
                         
-                        # Fallback bypass if phone isn't in DB yet (Remove in production once data is clean)
+                        # Fallback bypass if phone isn't in DB yet
                         if db_phone == 'None' or db_phone == '':
                             st.warning("⚠️ No phone number registered in database. Allowing one-time bypass for setup.")
                             db_phone = phone_input 
                             
                         if phone_input[-5:] == db_phone[-5:]: # Checking last 5 digits for flexibility
                             st.session_state.student_auth = True
-                            st.session_state.student_usn = student_record['usn']
+                            st.session_state.student_usn = student_record.get('usn') if student_record.get('usn') else student_record.get('admission_number')
                             st.session_state.student_name = student_record['full_name']
                             st.rerun()
                         else:
@@ -110,47 +115,57 @@ if st.session_state.student_auth:
         
     st.markdown("---")
     st.subheader("Upload Photograph")
+    
+    # 🟢 NEW: Added size guideline
     st.markdown("""
     **Guidelines:**
     * 👔 Professional attire required.
     * 🟦 Light or solid background.
     * 👤 Face must be clearly visible and centered.
+    * 🗜️ **File size must be strictly below 1 MB.**
     """)
     
     # Strictly File Uploader (No st.camera_input)
     uploaded_file = st.file_uploader("Choose a file", type=['jpg', 'jpeg', 'png', 'webp'])
     
     if uploaded_file is not None:
-        st.info("⚙️ Processing image (auto-cropping and optimizing)...")
+        # 🟢 NEW: Strict 1 MB File Size Constraint (1 MB = 1,048,576 Bytes)
+        MAX_FILE_SIZE = 1 * 1024 * 1024  
         
-        processed_bytes = process_passport_photo(uploaded_file)
-        
-        if processed_bytes:
-            # Show the student exactly what the final cropped image looks like
-            st.image(processed_bytes, caption="Final Portrait Preview", width=250)
+        if uploaded_file.size > MAX_FILE_SIZE:
+            current_size_mb = uploaded_file.size / (1024 * 1024)
+            st.error(f"❌ **File Too Large!** Your image is {current_size_mb:.2f} MB. Please compress the image to under 1 MB and try again.")
+        else:
+            st.info("⚙️ Processing image (auto-cropping and optimizing)...")
             
-            if st.button("☁️ Confirm & Upload to Database", type="primary", use_container_width=True):
-                with st.spinner("Uploading securely..."):
-                    file_name = f"{st.session_state.student_usn}.jpg"
-                    
-                    try:
-                        # Upload to Supabase Storage (upsert=true overwrites any old photo)
-                        res = supabase.storage.from_("StakeHolders_Photos").upload(
-                            file=processed_bytes.getvalue(),
-                            path=file_name,
-                            file_options={"content-type": "image/jpeg", "upsert": "true"}
-                        )
-                        st.success("🎉 **Success!** Your photo has been officially updated.")
-                        st.balloons()
-                    except Exception as e:
-                        if "Duplicate" in str(e):
-                            # In case upsert flag doesn't bypass Supabase API quirks, do a manual update
-                            supabase.storage.from_("StakeHolders_Photos").update(
+            processed_bytes = process_passport_photo(uploaded_file)
+            
+            if processed_bytes:
+                # Show the student exactly what the final cropped image looks like
+                st.image(processed_bytes, caption="Final Portrait Preview", width=250)
+                
+                if st.button("☁️ Confirm & Upload to Database", type="primary", use_container_width=True):
+                    with st.spinner("Uploading securely..."):
+                        file_name = f"{st.session_state.student_usn}.jpg"
+                        
+                        try:
+                            # Upload to Supabase Storage (upsert=true overwrites any old photo)
+                            res = supabase.storage.from_("StakeHolders_Photos").upload(
                                 file=processed_bytes.getvalue(),
                                 path=file_name,
-                                file_options={"content-type": "image/jpeg"}
+                                file_options={"content-type": "image/jpeg", "upsert": "true"}
                             )
-                            st.success("🎉 **Success!** Your existing photo has been successfully replaced.")
+                            st.success("🎉 **Success!** Your photo has been officially updated.")
                             st.balloons()
-                        else:
-                            st.error(f"❌ Upload failed: {e}")
+                        except Exception as e:
+                            if "Duplicate" in str(e):
+                                # In case upsert flag doesn't bypass Supabase API quirks, do a manual update
+                                supabase.storage.from_("StakeHolders_Photos").update(
+                                    file=processed_bytes.getvalue(),
+                                    path=file_name,
+                                    file_options={"content-type": "image/jpeg"}
+                                )
+                                st.success("🎉 **Success!** Your existing photo has been successfully replaced.")
+                                st.balloons()
+                            else:
+                                st.error(f"❌ Upload failed: {e}")
