@@ -50,8 +50,9 @@ def process_passport_photo(uploaded_file):
 # ==========================================
 # 3. USER INTERFACE & LOGIC
 # ==========================================
-st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/AMC_Engineering_College_Logo.png/1200px-AMC_Engineering_College_Logo.png", width=80)
-st.title("📸 Official Photo Portal")
+
+# 🟢 Broken image link removed, AMCEC added directly to the main title
+st.title("📸 AMCEC Official Photo Portal")
 st.markdown("Upload your formal passport-size photograph for your Hall Ticket and Academic Records.")
 
 # --- STEP 1: SECURITY GATE ---
@@ -59,9 +60,9 @@ if not st.session_state.student_auth:
     st.info("🔒 Please verify your identity to proceed.")
     
     with st.form("auth_form"):
-        usn_input = st.text_input("USN / Admission Number", placeholder="e.g., 1AM26EC001").strip().upper()
-        # 🟢 CHANGED: Now asks for the 4-digit PIN printed on the PDF
-        pin_input = st.text_input("4-Digit Upload PIN", placeholder="Found on your printed application form", type="password").strip()
+        # 🟢 Labels updated to match the PDF instructions
+        usn_input = st.text_input("User Name", placeholder="e.g., TMP-EC-001 or 1AM26EC001").strip().upper()
+        pin_input = st.text_input("4-Digit PIN", placeholder="Found on your printed application form", type="password").strip()
         
         submitted = st.form_submit_button("Verify Identity", type="primary", use_container_width=True)
         
@@ -70,13 +71,15 @@ if not st.session_state.student_auth:
                 st.error("⚠️ Both fields are required.")
             else:
                 with st.spinner("Verifying records..."):
+                    # Check main USN column
                     res = supabase.table("master_students").select("usn, admission_number, full_name, photo_pin").eq("usn", usn_input).execute()
                     
+                    # Fallback to admission_number column
                     if not res.data:
                         res = supabase.table("master_students").select("usn, admission_number, full_name, photo_pin").eq("admission_number", usn_input).execute()
                     
                     if not res.data:
-                        st.error("❌ Student ID not found in the master database.")
+                        st.error("❌ User Name not found in the master database.")
                     else:
                         student_record = res.data[0]
                         db_pin = str(student_record.get('photo_pin', '')).strip()
