@@ -111,9 +111,22 @@ elif st.session_state.is_admin:
     st.markdown("---")
     st.subheader("📊 Live Upload Analytics")
     
-    with st.spinner("Fetching live database metrics..."):
-        res = supabase.table("master_students").select("usn, full_name, branch_code, photo_upload_count, last_photo_upload").execute()
-        df = pd.DataFrame(res.data)
+    # 🟢 PAGINATED FETCH LOOP (Bypasses 1,000 limit)
+    with st.spinner("Fetching live database metrics (bypassing limits)..."):
+        all_data = []
+        start = 0
+        step = 1000
+        
+        while True:
+            res = supabase.table("master_students").select("usn, full_name, branch_code, photo_upload_count, last_photo_upload").range(start, start + step - 1).execute()
+            if not res.data:
+                break
+            all_data.extend(res.data)
+            if len(res.data) < step:
+                break
+            start += step
+            
+        df = pd.DataFrame(all_data)
         
         if not df.empty:
             df['photo_upload_count'] = df['photo_upload_count'].fillna(0).astype(int)
@@ -152,7 +165,6 @@ elif st.session_state.is_admin:
                 st.dataframe(pending_df[['usn', 'full_name', 'branch_code']], use_container_width=True, hide_index=True)
         else:
             st.warning("No student records found in the database.")
-
 
 # --- STEP 3: SECURE UPLOAD BOOTH (STUDENT VIEW) ---
 elif st.session_state.student_auth:
@@ -203,7 +215,7 @@ elif st.session_state.student_auth:
                                 file_options={"content-type": "image/jpeg", "upsert": "true"}
                             )
                             
-                            # 🟢 UPDATE AUDIT COUNTER IN DATABASE
+                            # UPDATE AUDIT COUNTER IN DATABASE
                             new_count = st.session_state.upload_count + 1
                             supabase.table("master_students").update({
                                 "photo_upload_count": new_count,
@@ -215,7 +227,7 @@ elif st.session_state.student_auth:
                             st.success("🎉 **Success!** Your photo has been officially updated.")
                             st.balloons()
                         except Exception as e:
-                            if "Duplicate" in str(e):
+                            if "Duplicate" in str(e) or "already exists" in str(e):
                                 # Push replacement to Storage Bucket
                                 supabase.storage.from_("StakeHolders_Photos").update(
                                     file=processed_bytes.getvalue(),
@@ -223,7 +235,7 @@ elif st.session_state.student_auth:
                                     file_options={"content-type": "image/jpeg"}
                                 )
                                 
-                                # 🟢 UPDATE AUDIT COUNTER IN DATABASE
+                                # UPDATE AUDIT COUNTER IN DATABASE
                                 new_count = st.session_state.upload_count + 1
                                 supabase.table("master_students").update({
                                     "photo_upload_count": new_count,
