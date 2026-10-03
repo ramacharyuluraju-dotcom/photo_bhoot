@@ -11,8 +11,10 @@ from supabase import create_client, Client
 # ==========================================
 st.set_page_config(page_title="Student Photo Portal", page_icon="📸", layout="centered")
 
-# 🟢 SECRET ADMIN PIN (Change this to whatever you want)
-ADMIN_PIN = "9999"
+# 🔒 Secure Admin Credentials via Streamlit Secrets
+# Fallback to "ADMIN" and "9999" only if secrets are missing in development
+ADMIN_USER = str(st.secrets.get("admin", {}).get("username", "ADMIN"))
+ADMIN_PIN = str(st.secrets.get("admin", {}).get("pin", "9999"))
 
 @st.cache_resource
 def init_connection():
@@ -54,8 +56,8 @@ if not st.session_state.student_auth and not st.session_state.is_admin:
         if submitted:
             if not usn_input or not pin_input:
                 st.error("⚠️ Both fields are required.")
-            elif usn_input == "ADMIN" and pin_input == ADMIN_PIN:
-                # 🟢 SECRET ADMIN LOGIN TRIGGER
+            elif usn_input == ADMIN_USER and pin_input == ADMIN_PIN:
+                # 🟢 SECURE ADMIN LOGIN TRIGGER
                 st.session_state.is_admin = True
                 st.rerun()
             else:
@@ -80,7 +82,7 @@ if not st.session_state.student_auth and not st.session_state.is_admin:
                         else:
                             st.error("❌ Incorrect PIN. Please check your printed application form.")
 
-# --- STEP 2: SECRET ADMIN DASHBOARD ---
+# --- STEP 2: SECURE ADMIN DASHBOARD ---
 elif st.session_state.is_admin:
     st.success("✅ Logged in as Administrator")
     
@@ -178,7 +180,7 @@ elif st.session_state.student_auth:
         uploaded_file = st.camera_input("Take a picture")
     
     if uploaded_file is not None:
-        MAX_FILE_SIZE = 5 * 1024 * 1024  # Increased to 5MB to allow high-res originals before cropping
+        MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB to allow high-res originals before cropping
         
         if uploaded_file.size > MAX_FILE_SIZE:
             current_size_mb = uploaded_file.size / (1024 * 1024)
