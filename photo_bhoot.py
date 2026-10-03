@@ -3,6 +3,7 @@ import io
 import pandas as pd
 from datetime import datetime
 from PIL import Image, ImageOps
+from streamlit_cropper import st_cropper
 from supabase import create_client, Client
 
 # ==========================================
@@ -34,28 +35,7 @@ if 'student_auth' not in st.session_state:
     st.session_state.upload_count = 0
 
 # ==========================================
-# 2. IMAGE PROCESSING ENGINE ("The Washing Machine")
-# ==========================================
-def process_passport_photo(uploaded_file):
-    """Converts, center-crops to 3:4 ratio, resizes to 600x800, and compresses to JPG."""
-    try:
-        img = Image.open(uploaded_file)
-        if img.mode != 'RGB': img = img.convert('RGB')
-            
-        target_size = (600, 800)
-        img_cropped = ImageOps.fit(img, target_size, method=Image.Resampling.LANCZOS)
-        
-        output_buffer = io.BytesIO()
-        img_cropped.save(output_buffer, format='JPEG', quality=85, optimize=True)
-        output_buffer.seek(0)
-        
-        return output_buffer
-    except Exception as e:
-        st.error(f"Image processing failed: {e}")
-        return None
-
-# ==========================================
-# 3. USER INTERFACE & LOGIC
+# 2. USER INTERFACE & LOGIC
 # ==========================================
 
 st.title("📸 AMCEC Official Photo Portal")
@@ -176,7 +156,7 @@ elif st.session_state.student_auth:
         st.rerun()
         
     st.markdown("---")
-    st.subheader("Upload Photograph")
+    st.subheader("Upload & Crop Photograph")
     
     if st.session_state.upload_count > 0:
         st.info(f"🔄 You have already uploaded a photo. Uploading a new one will replace your existing formal photo. (Uploads so far: {st.session_state.upload_count})")
@@ -186,65 +166,108 @@ elif st.session_state.student_auth:
     * 👔 Professional attire required.
     * 🟦 Light or solid background.
     * 👤 Face must be clearly visible and centered.
-    * 🗜️ **File size must be strictly below 1 MB.**
+    * ✂️ **You must crop your photo using the tool below.**
     """)
     
-    uploaded_file = st.file_uploader("Choose a file", type=['jpg', 'jpeg', 'png', 'webp'])
+    input_method = st.radio("Choose Photo Source:", ["Upload a File", "Use Web Camera"], horizontal=True)
+
+    uploaded_file = None
+    if input_method == "Upload a File":
+        uploaded_file = st.file_uploader("Upload an image (JPG/PNG)", type=['jpg', 'jpeg', 'png', 'webp'])
+    else:
+        uploaded_file = st.camera_input("Take a picture")
     
     if uploaded_file is not None:
-        MAX_FILE_SIZE = 1 * 1024 * 1024  
+        MAX_FILE_SIZE = 5 * 1024 * 1024  # Increased to 5MB to allow high-res originals before cropping
         
         if uploaded_file.size > MAX_FILE_SIZE:
             current_size_mb = uploaded_file.size / (1024 * 1024)
-            st.error(f"❌ **File Too Large!** Your image is {current_size_mb:.2f} MB. Please compress the image to under 1 MB and try again.")
+            st.error(f"❌ **File Too Large!** Your image is {current_size_mb:.2f} MB. Please compress the image to under 5 MB and try again.")
         else:
-            st.info("⚙️ Processing image (auto-cropping and optimizing)...")
-            processed_bytes = process_passport_photo(uploaded_file)
-            
-            if processed_bytes:
-                st.image(processed_bytes, caption="Final Portrait Preview", width=250)
+            try:
+                # Load image into PIL for the cropper
+                img = Image.open(uploaded_file)
+                if img.mode != 'RGB': img = img.convert('RGB')
+
+                st.markdown("### ✂️ Step 1: Crop Your Photo")
+                st.info("Drag the corners of the blue box to frame your face. The box is strictly locked to the standard ID photo size (3:4 ratio).")
                 
-                if st.button("☁️ Confirm & Upload to Database", type="primary", use_container_width=True):
-                    with st.spinner("Uploading securely..."):
-                        file_name = f"{st.session_state.student_usn}.jpg"
-                        try:
-                            # Push to Storage Bucket
-                            res = supabase.storage.from_("StakeHolders_Photos").upload(
-                                file=processed_bytes.getvalue(),
-                                path=file_name,
-                                file_options={"content-type": "image/jpeg", "upsert": "true"}
-                            )
-                            
-                            # UPDATE AUDIT COUNTER IN DATABASE
-                            new_count = st.session_state.upload_count + 1
-                            supabase.table("master_students").update({
-                                "photo_upload_count": new_count,
-                                "last_photo_upload": datetime.now().isoformat()
-                            }).eq("usn", st.session_state.student_usn).execute()
-                            
-                            st.session_state.upload_count = new_count
-                            
-                            st.success("🎉 **Success!** Your photo has been officially updated.")
-                            st.balloons()
-                        except Exception as e:
-                            if "Duplicate" in str(e) or "already exists" in str(e):
-                                # Push replacement to Storage Bucket
-                                supabase.storage.from_("StakeHolders_Photos").update(
-                                    file=processed_bytes.getvalue(),
-                                    path=file_name,
-                                    file_options={"content-type": "image/jpeg"}
-                                )
+                # Render the interactive crop tool
+                cropped_img = st_cropper(
+                    img, 
+                    aspect_ratio=(3, 4), 
+                    box_color='#3b82f6', # Tailwind Blue
+                    return_type='image'
+                )
+                
+                st.divider()
+                
+                # 3. Final Preview & Approval
+                st.markdown("### 👀 Step 2: Review & Submit")
+                
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    st.write("**Final ID Preview:**")
+                    # Display the exact cropped result to the student
+                    st.image(cropped_img, use_column_width=True)
+                    
+                with col2:
+                    st.warning("Make sure your face is clearly visible, well-lit, and directly facing the camera. Blurry or poorly cropped photos will be rejected by the administration.")
+                    
+                    # Require manual confirmation before upload
+                    if st.checkbox("I confirm this photo is clear, perfectly cropped, and meets college guidelines."):
+                        if st.button("☁️ Confirm & Upload to Database", type="primary", use_container_width=True):
+                            with st.spinner("Optimizing and uploading securely..."):
                                 
-                                # UPDATE AUDIT COUNTER IN DATABASE
-                                new_count = st.session_state.upload_count + 1
-                                supabase.table("master_students").update({
-                                    "photo_upload_count": new_count,
-                                    "last_photo_upload": datetime.now().isoformat()
-                                }).eq("usn", st.session_state.student_usn).execute()
+                                # Process the already-cropped image to standardize size (600x800) and compress to JPG
+                                target_size = (600, 800)
+                                final_img = ImageOps.fit(cropped_img, target_size, method=Image.Resampling.LANCZOS)
                                 
-                                st.session_state.upload_count = new_count
+                                img_byte_arr = io.BytesIO()
+                                final_img.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+                                final_image_bytes = img_byte_arr.getvalue()
                                 
-                                st.success("🎉 **Success!** Your existing photo has been successfully replaced.")
-                                st.balloons()
-                            else:
-                                st.error(f"❌ Upload failed: {e}")
+                                file_name = f"{st.session_state.student_usn}.jpg"
+                                try:
+                                    # Push to Storage Bucket
+                                    res = supabase.storage.from_("StakeHolders_Photos").upload(
+                                        file=final_image_bytes,
+                                        path=file_name,
+                                        file_options={"content-type": "image/jpeg", "upsert": "true"}
+                                    )
+                                    
+                                    # UPDATE AUDIT COUNTER IN DATABASE
+                                    new_count = st.session_state.upload_count + 1
+                                    supabase.table("master_students").update({
+                                        "photo_upload_count": new_count,
+                                        "last_photo_upload": datetime.now().isoformat()
+                                    }).eq("usn", st.session_state.student_usn).execute()
+                                    
+                                    st.session_state.upload_count = new_count
+                                    
+                                    st.success("🎉 **Success!** Your perfectly cropped photo has been officially updated.")
+                                    st.balloons()
+                                except Exception as e:
+                                    if "Duplicate" in str(e) or "already exists" in str(e):
+                                        # Push replacement to Storage Bucket
+                                        supabase.storage.from_("StakeHolders_Photos").update(
+                                            file=final_image_bytes,
+                                            path=file_name,
+                                            file_options={"content-type": "image/jpeg"}
+                                        )
+                                        
+                                        # UPDATE AUDIT COUNTER IN DATABASE
+                                        new_count = st.session_state.upload_count + 1
+                                        supabase.table("master_students").update({
+                                            "photo_upload_count": new_count,
+                                            "last_photo_upload": datetime.now().isoformat()
+                                        }).eq("usn", st.session_state.student_usn).execute()
+                                        
+                                        st.session_state.upload_count = new_count
+                                        
+                                        st.success("🎉 **Success!** Your existing photo has been successfully replaced.")
+                                        st.balloons()
+                                    else:
+                                        st.error(f"❌ Upload failed: {e}")
+            except Exception as e:
+                 st.error(f"❌ Error loading image: {e}")
