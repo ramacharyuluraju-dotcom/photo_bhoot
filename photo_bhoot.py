@@ -100,7 +100,8 @@ elif st.session_state.is_admin:
         step = 1000
         
         while True:
-            res = supabase.table("master_students").select("usn, full_name, branch_code, photo_upload_count, last_photo_upload").range(start, start + step - 1).execute()
+            # Note: Added scheme_batch to the select query
+            res = supabase.table("master_students").select("usn, full_name, branch_code, photo_upload_count, last_photo_upload, scheme_batch").range(start, start + step - 1).execute()
             if not res.data:
                 break
             all_data.extend(res.data)
@@ -143,8 +144,23 @@ elif st.session_state.is_admin:
                 
             with tab3:
                 st.markdown("**Students yet to upload a photo**")
-                pending_df = df[df['photo_upload_count'] == 0]
-                st.dataframe(pending_df[['usn', 'full_name', 'branch_code']], use_container_width=True, hide_index=True)
+                
+                # Clean up the scheme_batch column for sorting
+                if 'scheme_batch' in df.columns:
+                    df['scheme_batch'] = pd.to_numeric(df['scheme_batch'], errors='coerce').fillna(0).astype(int)
+                    available_batches = sorted(df[df['scheme_batch'] > 0]['scheme_batch'].unique().tolist(), reverse=True)
+                    
+                    if available_batches:
+                        selected_batch = st.selectbox("Filter by Admission Batch (e.g., 26 for 2026):", available_batches)
+                        pending_df = df[(df['photo_upload_count'] == 0) & (df['scheme_batch'] == selected_batch)]
+                        
+                        st.info(f"Showing pending uploads for Batch {selected_batch}: **{len(pending_df)} students**")
+                        st.dataframe(pending_df[['usn', 'full_name', 'branch_code']], use_container_width=True, hide_index=True)
+                    else:
+                        st.warning("No batch data available.")
+                else:
+                    pending_df = df[df['photo_upload_count'] == 0]
+                    st.dataframe(pending_df[['usn', 'full_name', 'branch_code']], use_container_width=True, hide_index=True)
         else:
             st.warning("No student records found in the database.")
 
