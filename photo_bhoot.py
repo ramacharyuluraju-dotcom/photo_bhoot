@@ -2,8 +2,7 @@ import streamlit as st
 import io
 import pandas as pd
 from datetime import datetime
-from PIL import Image, ImageOps
-from streamlit_cropper import st_cropper
+from PIL import Image
 from supabase import create_client, Client
 
 # ==========================================
@@ -169,7 +168,7 @@ elif st.session_state.student_auth:
         st.rerun()
         
     st.markdown("---")
-    st.subheader("Upload & Crop Photograph")
+    st.subheader("Upload Photograph")
     
     if st.session_state.upload_count > 0:
         st.info(f"🔄 You have already uploaded a photo. Uploading a new one will replace your existing formal photo. (Uploads so far: {st.session_state.upload_count})")
@@ -179,7 +178,7 @@ elif st.session_state.student_auth:
     * 👔 Professional attire required.
     * 🟦 Light or solid background.
     * 👤 Face must be clearly visible and centered.
-    * ✂️ **Drag the blue box to frame your face.**
+    * ⚠️ **Please ensure your photo is already shaped like a passport portrait (taller than it is wide).**
     """)
     
     input_method = st.radio("Choose Photo Source:", ["Upload a File", "Use Web Camera"], horizontal=True)
@@ -191,7 +190,7 @@ elif st.session_state.student_auth:
         uploaded_file = st.camera_input("Take a picture")
     
     if uploaded_file is not None:
-        MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB to allow high-res originals before cropping
+        MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB to allow high-res originals
         
         if uploaded_file.size > MAX_FILE_SIZE:
             current_size_mb = uploaded_file.size / (1024 * 1024)
@@ -203,45 +202,26 @@ elif st.session_state.student_auth:
                 if img.mode != 'RGB': 
                     img = img.convert('RGB')
                 
-                # 🟢 THE MAGIC FIX: Pre-shrink huge photos to prevent mobile hanging!
-                # This proportionally scales the image down so the longest side is 800px.
-                img.thumbnail((800, 800), Image.Resampling.LANCZOS)
-                
-                st.markdown("### ✂️ Step 1: Crop Your Photo")
-                st.info("Drag the corners of the blue box to frame your face. The box is strictly locked to the standard ID photo size (3:4 ratio).")
-                
-                # 2. Render the interactive crop tool
-                cropped_img = st_cropper(
-                    img, 
-                    aspect_ratio=(3, 4), 
-                    box_color='#3b82f6', # Tailwind Blue
-                    return_type='image'
-                )
-                
-                st.divider()
-                
-                # 3. Final Preview & Approval
-                st.markdown("### 👀 Step 2: Review & Submit")
+                # 2. Final Preview & Approval
+                st.markdown("### 👀 Review & Submit")
                 
                 col1, col2 = st.columns([1, 2])
                 with col1:
                     st.write("**Final ID Preview:**")
-                    st.image(cropped_img, use_container_width=True)
+                    # Display the exact photo they uploaded
+                    st.image(img, use_container_width=True)
                     
                 with col2:
-                    st.warning("Make sure your face is clearly visible, well-lit, and directly facing the camera. Blurry or poorly cropped photos will be rejected by the administration.")
+                    st.warning("Make sure your face is clearly visible, well-lit, and directly facing the camera. Blurry or inappropriate photos will be rejected by the administration.")
                     
                     # Require manual confirmation before upload
-                    if st.checkbox("I confirm this photo is clear, perfectly cropped, and meets college guidelines."):
+                    if st.checkbox("I confirm this photo is clear and meets college guidelines."):
                         if st.button("☁️ Confirm & Upload to Database", type="primary", use_container_width=True):
                             with st.spinner("Optimizing and uploading securely..."):
                                 
-                                # Process the already-cropped image to standardize size (600x800) and compress to JPG
-                                target_size = (600, 800)
-                                final_img = ImageOps.fit(cropped_img, target_size, method=Image.Resampling.LANCZOS)
-                                
+                                # Convert to JPEG and compress slightly to save database space, without changing dimensions
                                 img_byte_arr = io.BytesIO()
-                                final_img.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+                                img.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
                                 final_image_bytes = img_byte_arr.getvalue()
                                 
                                 file_name = f"{st.session_state.student_usn}.jpg"
@@ -262,7 +242,7 @@ elif st.session_state.student_auth:
                                     
                                     st.session_state.upload_count = new_count
                                     
-                                    st.success("🎉 **Success!** Your perfectly cropped photo has been officially updated.")
+                                    st.success("🎉 **Success!** Your photo has been officially updated.")
                                     st.balloons()
                                 except Exception as e:
                                     if "Duplicate" in str(e) or "already exists" in str(e):
