@@ -93,14 +93,12 @@ elif st.session_state.is_admin:
     st.markdown("---")
     st.subheader("📊 Live Upload Analytics")
     
-    # 🟢 PAGINATED FETCH LOOP (Bypasses 1,000 limit)
     with st.spinner("Fetching live database metrics (bypassing limits)..."):
         all_data = []
         start = 0
         step = 1000
         
         while True:
-            # Note: Added scheme_batch to the select query
             res = supabase.table("master_students").select("usn, full_name, branch_code, photo_upload_count, last_photo_upload, scheme_batch").range(start, start + step - 1).execute()
             if not res.data:
                 break
@@ -118,7 +116,6 @@ elif st.session_state.is_admin:
             total_pending = total_students - total_uploaded
             completion_rate = (total_uploaded / total_students) * 100 if total_students > 0 else 0
             
-            # Key Metrics
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Total Students", total_students)
             col2.metric("Photos Uploaded", total_uploaded)
@@ -127,7 +124,6 @@ elif st.session_state.is_admin:
             
             st.divider()
             
-            # Tabular breakdown
             tab1, tab2, tab3 = st.tabs(["📋 Upload Audit Log", "⚠️ Multiple Replacements", "⏳ Pending Students"])
             
             with tab1:
@@ -145,7 +141,6 @@ elif st.session_state.is_admin:
             with tab3:
                 st.markdown("**Students yet to upload a photo**")
                 
-                # Clean up the scheme_batch column for sorting
                 if 'scheme_batch' in df.columns:
                     df['scheme_batch'] = pd.to_numeric(df['scheme_batch'], errors='coerce').fillna(0).astype(int)
                     available_batches = sorted(df[df['scheme_batch'] > 0]['scheme_batch'].unique().tolist(), reverse=True)
@@ -184,7 +179,7 @@ elif st.session_state.student_auth:
     * 👔 Professional attire required.
     * 🟦 Light or solid background.
     * 👤 Face must be clearly visible and centered.
-    * ✂️ **You must crop your photo using the tool below.**
+    * ✂️ **Drag the blue box to frame your face.**
     """)
     
     input_method = st.radio("Choose Photo Source:", ["Upload a File", "Use Web Camera"], horizontal=True)
@@ -203,14 +198,19 @@ elif st.session_state.student_auth:
             st.error(f"❌ **File Too Large!** Your image is {current_size_mb:.2f} MB. Please compress the image to under 5 MB and try again.")
         else:
             try:
-                # Load image into PIL for the cropper
+                # 1. Load image into PIL
                 img = Image.open(uploaded_file)
-                if img.mode != 'RGB': img = img.convert('RGB')
-
+                if img.mode != 'RGB': 
+                    img = img.convert('RGB')
+                
+                # 🟢 THE MAGIC FIX: Pre-shrink huge photos to prevent mobile hanging!
+                # This proportionally scales the image down so the longest side is 800px.
+                img.thumbnail((800, 800), Image.Resampling.LANCZOS)
+                
                 st.markdown("### ✂️ Step 1: Crop Your Photo")
                 st.info("Drag the corners of the blue box to frame your face. The box is strictly locked to the standard ID photo size (3:4 ratio).")
                 
-                # Render the interactive crop tool
+                # 2. Render the interactive crop tool
                 cropped_img = st_cropper(
                     img, 
                     aspect_ratio=(3, 4), 
@@ -226,8 +226,7 @@ elif st.session_state.student_auth:
                 col1, col2 = st.columns([1, 2])
                 with col1:
                     st.write("**Final ID Preview:**")
-                    # Display the exact cropped result to the student
-                    st.image(cropped_img, use_column_width=True)
+                    st.image(cropped_img, use_container_width=True)
                     
                 with col2:
                     st.warning("Make sure your face is clearly visible, well-lit, and directly facing the camera. Blurry or poorly cropped photos will be rejected by the administration.")
