@@ -115,21 +115,19 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None, sig_byte
             card.paste(logo, (40, 25), mask=logo)
         except Exception: pass
 
-    # Slightly reduced font sizes and shifted right to keep 'E' safely inside
     font_college = get_cloud_font(30)
     font_auto = get_cloud_font(18)
     
     draw.text((140, 32), "AMC ENGINEERING COLLEGE", font=font_college, fill='white')
     draw.text((140, 75), "Autonomous Institution under VTU", font=font_auto, fill='white')
     
-    # Elegant Separator Line
     draw.line([40, 120, 560, 120], fill='white', width=2)
 
     # ==========================================
     # 2. PHOTO & BARCODE AREA
     # ==========================================
-    draw.rectangle([50, 140, 410, 600], fill='#B0B0B0')  # Photo area
-    draw.rectangle([430, 140, 550, 600], fill='#D9534F') # Red strip
+    draw.rectangle([50, 140, 410, 600], fill='#B0B0B0')  
+    draw.rectangle([430, 140, 550, 600], fill='#D9534F') 
 
     if photo_bytes:
         try:
@@ -163,27 +161,42 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None, sig_byte
     draw.text((70, 645), f"ID: {str(usn).upper()}  |  SEM: {sem}", font=font_sub, fill='white')
 
     # ==========================================
-    # 4. PRINCIPAL SIGNATURE (White Background Block)
+    # 4. PRINCIPAL SIGNATURE (White Block)
     # ==========================================
-    sig_box_w = 240
+    sig_box_w = 340
     sig_box_h = 75
     sig_box_x = (card_width - sig_box_w) // 2
     sig_box_y = 715
     
-    # Draw a crisp white box so any uploaded signature looks great, even if it has a white background!
+    # Draw a wide white box for signature and title
     draw.rectangle([sig_box_x, sig_box_y, sig_box_x + sig_box_w, sig_box_y + sig_box_h], fill='white')
 
     if sig_bytes:
         try:
             sig = Image.open(io.BytesIO(sig_bytes)).convert('RGBA')
-            sig.thumbnail((230, 65), Image.Resampling.LANCZOS)
+            sig.thumbnail((160, 65), Image.Resampling.LANCZOS)
             
-            # Center the signature inside the white block
-            paste_x = sig_box_x + (sig_box_w - sig.width) // 2
+            # Left align the signature inside the white block
+            paste_x = sig_box_x + 10
             paste_y = sig_box_y + (sig_box_h - sig.height) // 2
             
             card.paste(sig, (paste_x, paste_y), mask=sig)
         except Exception: pass
+
+    # Add "Principal" text on the right side of the white block
+    font_principal = get_cloud_font(24)
+    principal_text = "Principal"
+    try:
+        text_bbox = draw.textbbox((0, 0), principal_text, font=font_principal)
+        text_w = text_bbox[2] - text_bbox[0]
+        text_h = text_bbox[3] - text_bbox[1]
+        
+        # Right align the text inside the white block
+        text_x = sig_box_x + sig_box_w - text_w - 20
+        text_y = sig_box_y + (sig_box_h - text_h) // 2 - 2 
+        
+        draw.text((text_x, text_y), principal_text, font=font_principal, fill='black')
+    except Exception: pass
 
     # ==========================================
     # 5. FOOTER
