@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 import io
+import os
 import re
 import urllib.request
 import zipfile
@@ -53,14 +54,9 @@ def get_college_logo():
     return None
 
 def fetch_student_photo(usn):
-    """
-    FIXED: Removed aggressive regex so it respects hyphens (e.g., TMP-AI-012.jpg)
-    just like the photo booth saves them.
-    """
     if not supabase: return None
     exact_usn = str(usn).strip().upper()
     
-    # Check common extensions, starting with the photo booth's default (.jpg)
     for ext in ['.jpg', '.JPG', '.png', '.jpeg']:
         try:
             res = supabase.storage.from_("StakeHolders_Photos").download(f"{exact_usn}{ext}")
@@ -77,11 +73,9 @@ def extract_branch(usn):
 # ==========================================
 # 3. ID CARD GENERATOR ENGINE
 # ==========================================
-import os
-
 @st.cache_data
 def download_cloud_font():
-    """Downloads the font once and saves it to the server's local storage."""
+    """Downloads the font once and saves it locally to avoid caching C-pointers."""
     font_path = "Roboto-Bold.ttf"
     if not os.path.exists(font_path):
         try:
@@ -94,12 +88,10 @@ def download_cloud_font():
     return font_path
 
 def get_cloud_font(size):
-    """Loads font from the downloaded file. Notice there is NO @st.cache_data here."""
+    """Loads font from the downloaded file."""
     try:
-        # Attempt local Windows/Mac font first
         return ImageFont.truetype("arial.ttf", size)
     except IOError:
-        # Fall back to the downloaded Google font for the Cloud Linux Server
         font_path = download_cloud_font()
         if font_path:
             try:
@@ -108,7 +100,7 @@ def get_cloud_font(size):
                 pass
         return ImageFont.load_default()
 
-def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
+def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
     card_width, card_height = 600, 850
     card = Image.new('RGB', (card_width, card_height), color='#19233A')
     draw = ImageDraw.Draw(card)
@@ -134,8 +126,8 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
             card.paste(logo, (logo_x, 60), mask=logo)
         except Exception: pass
 
-    # Vertical College Name (Using Cloud Font)
-    font_college = get_cloud_font(34)
+    # Vertical College Name - Font size reduced to prevent overlap
+    font_college = get_cloud_font(26)
     college_text = "AMC ENGINEERING COLLEGE"
     try:
         text_bbox = draw.textbbox((0,0), college_text, font=font_college)
@@ -153,11 +145,12 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
     draw.rectangle([50, 460, 550, 600], fill='#17A2B8')
     
     font_title = get_cloud_font(42)  
-    font_sub = get_cloud_font(24)    
+    font_sub = get_cloud_font(26)    
     
     display_name = str(name).upper()[:19] 
     draw.text((70, 470), display_name, font=font_title, fill='white')
-    draw.text((70, 545), f"ID: {str(usn).upper()} | DEPT: {branch} | SEM: {sem}", font=font_sub, fill='white')
+    # Removed DEPT from the banner string
+    draw.text((70, 545), f"ID: {str(usn).upper()}  |  SEM: {sem}", font=font_sub, fill='white')
 
     # Barcode
     if usn:
@@ -371,7 +364,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                     name = st.text_input("Full Name")
                     usn = st.text_input("USN / Temp ID").strip().upper()
                     sem = st.number_input("Semester", 1, 10, 1)
-                    branch = st.text_input("Department/Branch", value="GEN")
+                    # Removed manual branch input to keep the form clean
                     photo_file = st.file_uploader("Override Photo (Leave empty to fetch from DB)", type=['jpg', 'jpeg', 'png'])
                     submit = st.form_submit_button("Generate Card", type="primary")
                     
@@ -381,7 +374,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                         photo_bytes = photo_file.read() if photo_file else fetch_student_photo(usn)
                         logo_bytes = get_college_logo()
                         
-                        card = generate_id_card(name, usn, sem, branch, logo_bytes, photo_bytes)
+                        card = generate_id_card(name, usn, sem, logo_bytes, photo_bytes)
                         st.image(card, width=350)
                         
                         buf = io.BytesIO()
@@ -418,7 +411,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                             cards = []
                             for _, row in group.iterrows():
                                 photo_bytes = fetch_student_photo(row['usn'])
-                                card = generate_id_card(row['full_name'], row['usn'], row['current_sem'], branch, logo_bytes, photo_bytes)
+                                card = generate_id_card(row['full_name'], row['usn'], row['current_sem'], logo_bytes, photo_bytes)
                                 cards.append(card)
                                 
                             a4_pages = create_a4_pages(cards)
