@@ -130,7 +130,7 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
     font_college = get_cloud_font(32)
     # Rotating 270 degrees CCW (90 CW) means the bottom horizontal line becomes the left vertical line.
     # Therefore, "AMC ENGINEERING" goes on the bottom, "COLLEGE" goes on top to read correctly.
-    college_text = "COLLEGE\nAMC ENGINEERING"
+    college_text = "AMC INSTITUTIONS"
     try:
         text_bbox = draw.multiline_textbbox((0,0), college_text, font=font_college, align="center")
         tw = int(text_bbox[2] - text_bbox[0])
