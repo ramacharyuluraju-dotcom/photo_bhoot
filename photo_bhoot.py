@@ -77,24 +77,36 @@ def extract_branch(usn):
 # ==========================================
 # 3. ID CARD GENERATOR ENGINE
 # ==========================================
+import os
+
 @st.cache_data
-def get_cloud_font(size):
-    """
-    CRITICAL CLOUD FIX: If standard fonts are missing on the Linux server, 
-    this downloads a beautiful Google Font into memory so resizing actually works.
-    """
-    try:
-        # Attempt local standard font first
-        return ImageFont.truetype("arial.ttf", size)
-    except IOError:
+def download_cloud_font():
+    """Downloads the font once and saves it to the server's local storage."""
+    font_path = "Roboto-Bold.ttf"
+    if not os.path.exists(font_path):
         try:
-            # Download Roboto directly into memory
             url = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf"
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            font_bytes = urllib.request.urlopen(req).read()
-            return ImageFont.truetype(io.BytesIO(font_bytes), size)
+            with open(font_path, "wb") as f:
+                f.write(urllib.request.urlopen(req).read())
         except Exception:
-            return ImageFont.load_default()
+            return None
+    return font_path
+
+def get_cloud_font(size):
+    """Loads font from the downloaded file. Notice there is NO @st.cache_data here."""
+    try:
+        # Attempt local Windows/Mac font first
+        return ImageFont.truetype("arial.ttf", size)
+    except IOError:
+        # Fall back to the downloaded Google font for the Cloud Linux Server
+        font_path = download_cloud_font()
+        if font_path:
+            try:
+                return ImageFont.truetype(font_path, size)
+            except Exception:
+                pass
+        return ImageFont.load_default()
 
 def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
     card_width, card_height = 600, 850
