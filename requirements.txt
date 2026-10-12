@@ -2,3 +2,5 @@ streamlit
 supabase
 Pillow
 streamlit-cropper
+pandas 
+python-barcode
