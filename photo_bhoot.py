@@ -105,68 +105,69 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
     card = Image.new('RGB', (card_width, card_height), color='#19233A')
     draw = ImageDraw.Draw(card)
 
-    # Base Layout
-    draw.rectangle([50, 50, 420, 550], fill='#B0B0B0')  
-    draw.rectangle([420, 50, 550, 550], fill='#D9534F') 
-
-    # Profile Photo
-    if photo_bytes:
-        try:
-            photo = Image.open(io.BytesIO(photo_bytes)).convert('RGB')
-            photo = photo.resize((370, 500), Image.Resampling.LANCZOS)
-            card.paste(photo, (50, 50))
-        except Exception: pass
-
-    # College Logo
+    # ==========================================
+    # NEW LAYOUT: 1. HEADER AREA
+    # ==========================================
     if logo_bytes:
         try:
             logo = Image.open(io.BytesIO(logo_bytes)).convert('RGBA')
-            logo.thumbnail((110, 110), Image.Resampling.LANCZOS)
-            logo_x = 420 + (130 - logo.width) // 2
-            card.paste(logo, (logo_x, 60), mask=logo)
+            logo.thumbnail((90, 90), Image.Resampling.LANCZOS)
+            card.paste(logo, (50, 35), mask=logo)
         except Exception: pass
 
-    # Vertical College Name - Split into two lines for larger font
-    font_college = get_cloud_font(32)
-    # Rotating 270 degrees CCW (90 CW) means the bottom horizontal line becomes the left vertical line.
-    # Therefore, "AMC ENGINEERING" goes on the bottom, "COLLEGE" goes on top to read correctly.
-    college_text = "AMC INSTITUTIONS"
-    try:
-        text_bbox = draw.multiline_textbbox((0,0), college_text, font=font_college, align="center")
-        tw = int(text_bbox[2] - text_bbox[0])
-        th = int(text_bbox[3] - text_bbox[1])
-        txt_img = Image.new('RGBA', (tw + 10, th + 10), (255, 255, 255, 0))
-        ImageDraw.Draw(txt_img).multiline_text((5, 5), college_text, font=font_college, fill='white', align='center')
-        
-        rotated_txt = txt_img.rotate(270, expand=True)
-        rt_w, rt_h = rotated_txt.size
-        txt_x = 420 + (130 - rt_w) // 2
-        card.paste(rotated_txt, (txt_x, 190), mask=rotated_txt)
-    except Exception: pass
-
-    # Teal Banner
-    draw.rectangle([50, 460, 550, 600], fill='#17A2B8')
+    font_college = get_cloud_font(34)
+    font_auto = get_cloud_font(20)
     
-    font_title = get_cloud_font(42)  
-    font_sub = get_cloud_font(26)    
+    draw.text((155, 40), "AMC ENGINEERING COLLEGE", font=font_college, fill='white')
+    draw.text((155, 85), "Autonomous Institution under VTU", font=font_auto, fill='white')
     
-    display_name = str(name).upper()[:19] 
-    draw.text((70, 470), display_name, font=font_title, fill='white')
-    draw.text((70, 545), f"ID: {str(usn).upper()}  |  SEM: {sem}", font=font_sub, fill='white')
+    # Elegant Separator Line
+    draw.line([50, 140, 550, 140], fill='white', width=2)
 
-    # Barcode
+    # ==========================================
+    # NEW LAYOUT: 2. PHOTO & BARCODE AREA
+    # ==========================================
+    draw.rectangle([50, 170, 410, 650], fill='#B0B0B0')  # Photo area
+    draw.rectangle([430, 170, 550, 650], fill='#D9534F') # Red strip
+
+    if photo_bytes:
+        try:
+            photo = Image.open(io.BytesIO(photo_bytes)).convert('RGB')
+            photo = photo.resize((360, 480), Image.Resampling.LANCZOS)
+            card.paste(photo, (50, 170))
+        except Exception: pass
+
     if usn:
         try:
             rv = io.BytesIO()
             code128 = barcode.get('code128', str(usn).strip().upper(), writer=ImageWriter())
-            code128.write(rv, options={"write_text": False, "module_height": 13.0, "quiet_zone": 1.5})
+            # Generate horizontal first
+            code128.write(rv, options={"write_text": False, "module_height": 10.0, "quiet_zone": 1.5})
             rv.seek(0)
             bc_img = Image.open(rv).convert('RGB')
-            bc_img = bc_img.resize((500, 130), Image.Resampling.LANCZOS)
-            card.paste(bc_img, (50, 620))
+            # Resize horizontal image to fit mathematically 
+            bc_img = bc_img.resize((440, 90), Image.Resampling.LANCZOS)
+            # Rotate 90 degrees to make it perfectly vertical
+            bc_img = bc_img.rotate(90, expand=True)
+            # Paste into the center of the Red Strip
+            card.paste(bc_img, (445, 190))
         except Exception: pass
 
-    # Footer
+    # ==========================================
+    # NEW LAYOUT: 3. DETAILS BANNER
+    # ==========================================
+    draw.rectangle([50, 610, 550, 750], fill='#17A2B8')
+    
+    font_title = get_cloud_font(38)  
+    font_sub = get_cloud_font(24)    
+    
+    display_name = str(name).upper()[:19] 
+    draw.text((70, 635), display_name, font=font_title, fill='white')
+    draw.text((70, 695), f"ID: {str(usn).upper()}  |  SEM: {sem}", font=font_sub, fill='white')
+
+    # ==========================================
+    # NEW LAYOUT: 4. FOOTER
+    # ==========================================
     font_footer = get_cloud_font(20)
     footer_text = "www.amcgroup.edu.in"
     try:
@@ -366,7 +367,6 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                     name = st.text_input("Full Name")
                     usn = st.text_input("USN / Temp ID").strip().upper()
                     sem = st.number_input("Semester", 1, 10, 1)
-                    # Removed manual branch input to keep the form clean
                     photo_file = st.file_uploader("Override Photo (Leave empty to fetch from DB)", type=['jpg', 'jpeg', 'png'])
                     submit = st.form_submit_button("Generate Card", type="primary")
                     
