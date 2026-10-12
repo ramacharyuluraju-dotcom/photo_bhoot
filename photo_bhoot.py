@@ -163,37 +163,37 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None, sig_byte
     # ==========================================
     # 4. PRINCIPAL SIGNATURE (White Block)
     # ==========================================
-    sig_box_w = 340
-    sig_box_h = 75
+    sig_box_w = 260
+    sig_box_h = 85
     sig_box_x = (card_width - sig_box_w) // 2
-    sig_box_y = 715
+    sig_box_y = 710
     
-    # Draw a wide white box for signature and title
+    # Draw a vertically stacked white box for signature and title
     draw.rectangle([sig_box_x, sig_box_y, sig_box_x + sig_box_w, sig_box_y + sig_box_h], fill='white')
 
     if sig_bytes:
         try:
             sig = Image.open(io.BytesIO(sig_bytes)).convert('RGBA')
-            sig.thumbnail((160, 65), Image.Resampling.LANCZOS)
+            sig.thumbnail((240, 50), Image.Resampling.LANCZOS)
             
-            # Left align the signature inside the white block
-            paste_x = sig_box_x + 10
-            paste_y = sig_box_y + (sig_box_h - sig.height) // 2
+            # Center the signature at the TOP of the white block
+            paste_x = sig_box_x + (sig_box_w - sig.width) // 2
+            paste_y = sig_box_y + 4
             
             card.paste(sig, (paste_x, paste_y), mask=sig)
         except Exception: pass
 
-    # Add "Principal" text on the right side of the white block
-    font_principal = get_cloud_font(24)
+    # Add "Principal" text vertically stacked BELOW the signature
+    font_principal = get_cloud_font(20)
     principal_text = "Principal"
     try:
         text_bbox = draw.textbbox((0, 0), principal_text, font=font_principal)
         text_w = text_bbox[2] - text_bbox[0]
         text_h = text_bbox[3] - text_bbox[1]
         
-        # Right align the text inside the white block
-        text_x = sig_box_x + sig_box_w - text_w - 20
-        text_y = sig_box_y + (sig_box_h - text_h) // 2 - 2 
+        # Center the text at the BOTTOM of the white block
+        text_x = sig_box_x + (sig_box_w - text_w) // 2
+        text_y = sig_box_y + sig_box_h - text_h - 6
         
         draw.text((text_x, text_y), principal_text, font=font_principal, fill='black')
     except Exception: pass
