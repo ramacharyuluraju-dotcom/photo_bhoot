@@ -3,6 +3,7 @@ import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 import io
 import re
+import urllib.request
 import zipfile
 import barcode
 from barcode.writer import ImageWriter
@@ -53,18 +54,20 @@ def get_college_logo():
 
 def fetch_student_photo(usn):
     """
-    Lightning-fast fetch: Since our upload portal ALWAYS saves as .jpg,
-    we only make ONE network request to Supabase, eliminating timeout delays.
+    FIXED: Removed aggressive regex so it respects hyphens (e.g., TMP-AI-012.jpg)
+    just like the photo booth saves them.
     """
     if not supabase: return None
-    clean_usn = re.sub(r'[^A-Z0-9]', '', str(usn).upper())
+    exact_usn = str(usn).strip().upper()
     
-    try:
-        res = supabase.storage.from_("StakeHolders_Photos").download(f"{clean_usn}.jpg")
-        if res and len(res) > 0: 
-            return res
-    except Exception:
-        pass
+    # Check common extensions, starting with the photo booth's default (.jpg)
+    for ext in ['.jpg', '.JPG', '.png', '.jpeg']:
+        try:
+            res = supabase.storage.from_("StakeHolders_Photos").download(f"{exact_usn}{ext}")
+            if res and len(res) > 0: 
+                return res
+        except Exception:
+            continue
     return None
 
 def extract_branch(usn):
@@ -74,27 +77,24 @@ def extract_branch(usn):
 # ==========================================
 # 3. ID CARD GENERATOR ENGINE
 # ==========================================
-def get_font(size):
+@st.cache_data
+def get_cloud_font(size):
     """
-    CRITICAL FIX: Checks explicit Linux font paths so Streamlit Cloud
-    actually applies the requested font sizes instead of falling back to the tiny default.
+    CRITICAL CLOUD FIX: If standard fonts are missing on the Linux server, 
+    this downloads a beautiful Google Font into memory so resizing actually works.
     """
-    font_paths = [
-        "arial.ttf", 
-        "Helvetica.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf"
-    ]
-    
-    for path in font_paths:
+    try:
+        # Attempt local standard font first
+        return ImageFont.truetype("arial.ttf", size)
+    except IOError:
         try:
-            return ImageFont.truetype(path, size)
-        except IOError:
-            continue
-            
-    return ImageFont.load_default()
+            # Download Roboto directly into memory
+            url = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            font_bytes = urllib.request.urlopen(req).read()
+            return ImageFont.truetype(io.BytesIO(font_bytes), size)
+        except Exception:
+            return ImageFont.load_default()
 
 def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
     card_width, card_height = 600, 850
@@ -122,8 +122,8 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
             card.paste(logo, (logo_x, 60), mask=logo)
         except Exception: pass
 
-    # Vertical College Name (Massive Font)
-    font_college = get_font(38)
+    # Vertical College Name (Using Cloud Font)
+    font_college = get_cloud_font(34)
     college_text = "AMC ENGINEERING COLLEGE"
     try:
         text_bbox = draw.textbbox((0,0), college_text, font=font_college)
@@ -140,8 +140,8 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
     # Teal Banner
     draw.rectangle([50, 460, 550, 600], fill='#17A2B8')
     
-    font_title = get_font(42)  
-    font_sub = get_font(26)    
+    font_title = get_cloud_font(42)  
+    font_sub = get_cloud_font(24)    
     
     display_name = str(name).upper()[:19] 
     draw.text((70, 470), display_name, font=font_title, fill='white')
@@ -160,7 +160,7 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
         except Exception: pass
 
     # Footer
-    font_footer = get_font(22)
+    font_footer = get_cloud_font(20)
     footer_text = "www.amcgroup.edu.in"
     try:
         text_bbox = draw.textbbox((0, 0), footer_text, font=font_footer)
@@ -171,14 +171,10 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
     return card
 
 def create_a4_pages(cards):
-    """
-    NEW LAYOUT: 3 Columns x 4 Rows (12 Cards per Page)
-    Maximizes standard 300DPI A4 sheets without shrinking the cards.
-    """
+    """3 Columns x 4 Rows (12 Cards per Page) for 300DPI A4"""
     A4_WIDTH, A4_HEIGHT = 2480, 3508
     pages = []
     
-    # Mathematical offsets for 3 columns and 4 rows of 600x850 cards
     x_offsets = [200, 940, 1680] 
     y_offsets = [40, 900, 1760, 2620] 
     
