@@ -162,7 +162,6 @@ def create_a4_pages(cards):
 # ==========================================
 mode = st.sidebar.radio("Navigation", [
     "📸 Student Photo Booth", 
-    "🪪 Quick Temp ID Generator", 
     "👑 AMC_COE_ADMIN Console"
 ])
 
@@ -251,35 +250,7 @@ if mode == "📸 Student Photo Booth":
                 except Exception as e: st.error(f"Error processing image: {e}")
 
 # ------------------------------------------
-# MODE 2: QUICK TEMP ID GENERATOR
-# ------------------------------------------
-elif mode == "🪪 Quick Temp ID Generator":
-    st.title("🪪 Individual Temp ID Generator")
-    c1, c2 = st.columns(2)
-    
-    with c1:
-        with st.form("single_form"):
-            name = st.text_input("Full Name")
-            usn = st.text_input("USN / Temp ID").strip().upper()
-            sem = st.number_input("Semester", 1, 10, 1)
-            photo_file = st.file_uploader("Override Photo (Leave empty to fetch from DB)", type=['jpg', 'jpeg', 'png'])
-            submit = st.form_submit_button("Generate Card", type="primary")
-            
-    with c2:
-        if submit and name and usn:
-            with st.spinner("Generating..."):
-                photo_bytes = photo_file.read() if photo_file else fetch_student_photo(usn)
-                logo_bytes = get_college_logo()
-                
-                card = generate_id_card(name, usn, sem, logo_bytes, photo_bytes)
-                st.image(card, width=350)
-                
-                buf = io.BytesIO()
-                card.save(buf, format="PNG")
-                st.download_button("⬇️ Download PNG", data=buf.getvalue(), file_name=f"ID_{usn}.png", mime="image/png")
-
-# ------------------------------------------
-# MODE 3: AMC_COE_ADMIN CONSOLE
+# MODE 2: AMC_COE_ADMIN CONSOLE
 # ------------------------------------------
 elif mode == "👑 AMC_COE_ADMIN Console":
     st.title("👑 AMC_COE_ADMIN Unified Console")
@@ -300,7 +271,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
             st.session_state.is_admin = False
             st.rerun()
             
-        tab1, tab2 = st.tabs(["📊 Photo Upload Analytics", "🖨️ Bulk Temp ID Print Engine"])
+        tab1, tab2, tab3 = st.tabs(["📊 Photo Upload Analytics", "🪪 Single Temp ID Gen", "🖨️ Bulk Temp ID Print Engine"])
         
         # --- TAB 1: PHOTO ANALYTICS ---
         with tab1:
@@ -347,8 +318,34 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                 else:
                     st.warning("No student records found.")
 
-        # --- TAB 2: BULK TEMP ID ENGINE ---
+        # --- TAB 2: SINGLE TEMP ID GEN ---
         with tab2:
+            st.subheader("🪪 Individual Temp ID Generator")
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                with st.form("single_form"):
+                    name = st.text_input("Full Name")
+                    usn = st.text_input("USN / Temp ID").strip().upper()
+                    sem = st.number_input("Semester", 1, 10, 1)
+                    photo_file = st.file_uploader("Override Photo (Leave empty to fetch from DB)", type=['jpg', 'jpeg', 'png'])
+                    submit = st.form_submit_button("Generate Card", type="primary")
+                    
+            with c2:
+                if submit and name and usn:
+                    with st.spinner("Generating..."):
+                        photo_bytes = photo_file.read() if photo_file else fetch_student_photo(usn)
+                        logo_bytes = get_college_logo()
+                        
+                        card = generate_id_card(name, usn, sem, logo_bytes, photo_bytes)
+                        st.image(card, width=350)
+                        
+                        buf = io.BytesIO()
+                        card.save(buf, format="PNG")
+                        st.download_button("⬇️ Download PNG", data=buf.getvalue(), file_name=f"ID_{usn}.png", mime="image/png")
+
+        # --- TAB 3: BULK TEMP ID ENGINE ---
+        with tab3:
             st.subheader("Bulk Branch-Wise Print Engine (A4 2x4 Grid)")
             st.info("Upload a CSV containing `usn`, `full_name`, and `current_sem`. The system automatically fetches photos from Supabase, groups students by branch, and generates ready-to-print A4 PDF sheets.")
             
