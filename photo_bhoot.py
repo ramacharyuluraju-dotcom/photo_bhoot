@@ -100,73 +100,83 @@ def get_cloud_font(size):
                 pass
         return ImageFont.load_default()
 
-def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
+def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None, sig_bytes=None):
     card_width, card_height = 600, 850
     card = Image.new('RGB', (card_width, card_height), color='#19233A')
     draw = ImageDraw.Draw(card)
 
     # ==========================================
-    # NEW LAYOUT: 1. HEADER AREA
+    # 1. HEADER AREA (Shifted Up)
     # ==========================================
     if logo_bytes:
         try:
             logo = Image.open(io.BytesIO(logo_bytes)).convert('RGBA')
             logo.thumbnail((90, 90), Image.Resampling.LANCZOS)
-            card.paste(logo, (50, 35), mask=logo)
+            card.paste(logo, (50, 25), mask=logo)
         except Exception: pass
 
     font_college = get_cloud_font(34)
     font_auto = get_cloud_font(20)
     
-    draw.text((155, 40), "AMC ENGINEERING COLLEGE", font=font_college, fill='white')
-    draw.text((155, 85), "Autonomous Institution under VTU", font=font_auto, fill='white')
+    draw.text((155, 30), "AMC ENGINEERING COLLEGE", font=font_college, fill='white')
+    draw.text((155, 75), "Autonomous Institution under VTU", font=font_auto, fill='white')
     
     # Elegant Separator Line
-    draw.line([50, 140, 550, 140], fill='white', width=2)
+    draw.line([50, 120, 550, 120], fill='white', width=2)
 
     # ==========================================
-    # NEW LAYOUT: 2. PHOTO & BARCODE AREA
+    # 2. PHOTO & BARCODE AREA (Shifted Up)
     # ==========================================
-    draw.rectangle([50, 170, 410, 650], fill='#B0B0B0')  # Photo area
-    draw.rectangle([430, 170, 550, 650], fill='#D9534F') # Red strip
+    draw.rectangle([50, 140, 410, 600], fill='#B0B0B0')  # Photo area
+    draw.rectangle([430, 140, 550, 600], fill='#D9534F') # Red strip
 
     if photo_bytes:
         try:
             photo = Image.open(io.BytesIO(photo_bytes)).convert('RGB')
-            photo = photo.resize((360, 480), Image.Resampling.LANCZOS)
-            card.paste(photo, (50, 170))
+            # Resized slightly to fit the shifted layout
+            photo = photo.resize((360, 460), Image.Resampling.LANCZOS)
+            card.paste(photo, (50, 140))
         except Exception: pass
 
     if usn:
         try:
             rv = io.BytesIO()
             code128 = barcode.get('code128', str(usn).strip().upper(), writer=ImageWriter())
-            # Generate horizontal first
             code128.write(rv, options={"write_text": False, "module_height": 10.0, "quiet_zone": 1.5})
             rv.seek(0)
             bc_img = Image.open(rv).convert('RGB')
-            # Resize horizontal image to fit mathematically 
+            # Fits perfectly in the updated 460px high red strip
             bc_img = bc_img.resize((440, 90), Image.Resampling.LANCZOS)
-            # Rotate 90 degrees to make it perfectly vertical
             bc_img = bc_img.rotate(90, expand=True)
-            # Paste into the center of the Red Strip
-            card.paste(bc_img, (445, 190))
+            card.paste(bc_img, (445, 150))
         except Exception: pass
 
     # ==========================================
-    # NEW LAYOUT: 3. DETAILS BANNER
+    # 3. DETAILS BANNER (Shifted Up)
     # ==========================================
-    draw.rectangle([50, 610, 550, 750], fill='#17A2B8')
+    draw.rectangle([50, 570, 550, 700], fill='#17A2B8')
     
     font_title = get_cloud_font(38)  
     font_sub = get_cloud_font(24)    
     
     display_name = str(name).upper()[:19] 
-    draw.text((70, 635), display_name, font=font_title, fill='white')
-    draw.text((70, 695), f"ID: {str(usn).upper()}  |  SEM: {sem}", font=font_sub, fill='white')
+    draw.text((70, 585), display_name, font=font_title, fill='white')
+    draw.text((70, 645), f"ID: {str(usn).upper()}  |  SEM: {sem}", font=font_sub, fill='white')
 
     # ==========================================
-    # NEW LAYOUT: 4. FOOTER
+    # 4. PRINCIPAL SIGNATURE (New Area)
+    # ==========================================
+    if sig_bytes:
+        try:
+            sig = Image.open(io.BytesIO(sig_bytes)).convert('RGBA')
+            # Resize signature to fit the new 100px gap
+            sig.thumbnail((200, 75), Image.Resampling.LANCZOS)
+            sig_x = (card_width - sig.width) // 2
+            card.paste(sig, (sig_x, 715), mask=sig)
+        except Exception: pass
+
+    # ==========================================
+    # 5. FOOTER
     # ==========================================
     font_footer = get_cloud_font(20)
     footer_text = "www.amcgroup.edu.in"
@@ -174,7 +184,7 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
         text_bbox = draw.textbbox((0, 0), footer_text, font=font_footer)
         text_x = (card_width - (text_bbox[2] - text_bbox[0])) // 2
     except: text_x = 200 
-    draw.text((text_x, 790), footer_text, font=font_footer, fill='white')
+    draw.text((text_x, 800), footer_text, font=font_footer, fill='white')
 
     return card
 
@@ -368,15 +378,17 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                     usn = st.text_input("USN / Temp ID").strip().upper()
                     sem = st.number_input("Semester", 1, 10, 1)
                     photo_file = st.file_uploader("Override Photo (Leave empty to fetch from DB)", type=['jpg', 'jpeg', 'png'])
+                    sig_file = st.file_uploader("Principal Signature (Optional, PNG)", type=['png', 'jpg', 'jpeg'])
                     submit = st.form_submit_button("Generate Card", type="primary")
                     
             with c2:
                 if submit and name and usn:
                     with st.spinner("Generating..."):
                         photo_bytes = photo_file.read() if photo_file else fetch_student_photo(usn)
+                        sig_bytes = sig_file.read() if sig_file else None
                         logo_bytes = get_college_logo()
                         
-                        card = generate_id_card(name, usn, sem, logo_bytes, photo_bytes)
+                        card = generate_id_card(name, usn, sem, logo_bytes, photo_bytes, sig_bytes)
                         st.image(card, width=350)
                         
                         buf = io.BytesIO()
@@ -389,6 +401,8 @@ elif mode == "👑 AMC_COE_ADMIN Console":
             st.info("Upload a CSV containing `usn`, `full_name`, and `current_sem`. The system automatically fetches photos from Supabase, groups students by branch, and generates ready-to-print A4 PDF sheets.")
             
             csv_file = st.file_uploader("Upload Master CSV", type=['csv'])
+            sig_file = st.file_uploader("Principal Signature (Optional, transparent PNG)", type=['png', 'jpg', 'jpeg'])
+            
             if csv_file and st.button("🚀 Execute Bulk Print Generation", type="primary"):
                 df_print = pd.read_csv(csv_file)
                 df_print.columns = [c.strip().lower() for c in df_print.columns]
@@ -400,6 +414,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                         df_print['branch'] = df_print['usn'].apply(extract_branch)
                         
                     logo_bytes = get_college_logo()
+                    sig_bytes = sig_file.read() if sig_file else None
                     
                     zip_buffer = io.BytesIO()
                     progress_bar = st.progress(0)
@@ -413,14 +428,13 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                             cards = []
                             for _, row in group.iterrows():
                                 photo_bytes = fetch_student_photo(row['usn'])
-                                card = generate_id_card(row['full_name'], row['usn'], row['current_sem'], logo_bytes, photo_bytes)
+                                card = generate_id_card(row['full_name'], row['usn'], row['current_sem'], logo_bytes, photo_bytes, sig_bytes)
                                 cards.append(card)
                                 
                             a4_pages = create_a4_pages(cards)
                             
                             if a4_pages:
                                 pdf_buf = io.BytesIO()
-                                # Resolution=300 forces the PDF bounds to match real A4 size exactly
                                 a4_pages[0].save(pdf_buf, format='PDF', save_all=True, append_images=a4_pages[1:], resolution=300)
                                 zf.writestr(f"Temp_ID_Cards_{branch}.pdf", pdf_buf.getvalue())
                                 
