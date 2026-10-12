@@ -52,13 +52,18 @@ def get_college_logo():
     return None
 
 def fetch_student_photo(usn):
+    """Robustly fetch photo checking multiple extension permutations"""
     if not supabase: return None
     clean_usn = re.sub(r'[^A-Z0-9]', '', str(usn).upper())
-    for ext in ['.jpg', '.jpeg', '.png', '.JPG']:
+    
+    extensions = ['.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG']
+    for ext in extensions:
         try:
             res = supabase.storage.from_("StakeHolders_Photos").download(f"{clean_usn}{ext}")
-            if res: return res
-        except: continue
+            if res and len(res) > 0: 
+                return res
+        except Exception: 
+            continue
     return None
 
 def extract_branch(usn):
@@ -74,14 +79,16 @@ def get_font(size):
         try: return ImageFont.truetype("Helvetica.ttf", size)
         except IOError: return ImageFont.load_default()
 
-def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
+def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
     card_width, card_height = 600, 850
     card = Image.new('RGB', (card_width, card_height), color='#19233A')
     draw = ImageDraw.Draw(card)
 
+    # Base Layout
     draw.rectangle([50, 50, 420, 550], fill='#B0B0B0')  
     draw.rectangle([420, 50, 550, 550], fill='#D9534F') 
 
+    # Profile Photo
     if photo_bytes:
         try:
             photo = Image.open(io.BytesIO(photo_bytes)).convert('RGB')
@@ -89,15 +96,17 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
             card.paste(photo, (50, 50))
         except Exception: pass
 
+    # College Logo
     if logo_bytes:
         try:
             logo = Image.open(io.BytesIO(logo_bytes)).convert('RGBA')
-            logo.thumbnail((100, 100), Image.Resampling.LANCZOS)
+            logo.thumbnail((110, 110), Image.Resampling.LANCZOS)
             logo_x = 420 + (130 - logo.width) // 2
             card.paste(logo, (logo_x, 60), mask=logo)
         except Exception: pass
 
-    font_college = get_font(28)
+    # Vertical College Name (Increased Font Size)
+    font_college = get_font(34)
     college_text = "AMC ENGINEERING COLLEGE"
     try:
         text_bbox = draw.textbbox((0,0), college_text, font=font_college)
@@ -108,18 +117,20 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
         rotated_txt = txt_img.rotate(270, expand=True)
         rt_w, rt_h = rotated_txt.size
         txt_x = 420 + (130 - rt_w) // 2
-        card.paste(rotated_txt, (txt_x, 180), mask=rotated_txt)
+        card.paste(rotated_txt, (txt_x, 190), mask=rotated_txt)
     except Exception: pass
 
-    draw.rectangle([50, 460, 550, 580], fill='#17A2B8')
+    # Teal Banner
+    draw.rectangle([50, 460, 550, 600], fill='#17A2B8')
     
-    font_title = get_font(42)  
-    font_sub = get_font(28)    
+    font_title = get_font(46)  # Larger Student Name
+    font_sub = get_font(24)    # Meta data font
     
-    display_name = str(name).upper()[:20] 
-    draw.text((70, 475), display_name, font=font_title, fill='white')
-    draw.text((70, 535), f"ID: {str(usn).upper()}  |  SEM: {sem}", font=font_sub, fill='white')
+    display_name = str(name).upper()[:19] 
+    draw.text((70, 470), display_name, font=font_title, fill='white')
+    draw.text((70, 545), f"ID: {str(usn).upper()} | DEPT: {branch} | SEM: {sem}", font=font_sub, fill='white')
 
+    # Barcode
     if usn:
         try:
             rv = io.BytesIO()
@@ -128,24 +139,28 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
             rv.seek(0)
             bc_img = Image.open(rv).convert('RGB')
             bc_img = bc_img.resize((500, 130), Image.Resampling.LANCZOS)
-            card.paste(bc_img, (50, 610))
+            card.paste(bc_img, (50, 620))
         except Exception: pass
 
-    font_footer = get_font(18)
+    # Footer
+    font_footer = get_font(20)
     footer_text = "www.amcgroup.edu.in"
     try:
         text_bbox = draw.textbbox((0, 0), footer_text, font=font_footer)
         text_x = (card_width - (text_bbox[2] - text_bbox[0])) // 2
     except: text_x = 200 
-    draw.text((text_x, 780), footer_text, font=font_footer, fill='white')
+    draw.text((text_x, 790), footer_text, font=font_footer, fill='white')
 
     return card
 
 def create_a4_pages(cards):
+    """Properly formats 2x4 grid for standard 300DPI A4 sheets"""
     A4_WIDTH, A4_HEIGHT = 2480, 3508
     pages = []
-    x_offsets = [480, 1400]
-    y_offsets = [35, 900, 1765, 2630]
+    
+    # Perfectly centered grid mathematics for 600x850 cards on 2480x3508 canvas
+    x_offsets = [590, 1290] 
+    y_offsets = [24, 894, 1764, 2634] 
     
     for i in range(0, len(cards), 8):
         chunk = cards[i:i+8]
@@ -328,6 +343,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                     name = st.text_input("Full Name")
                     usn = st.text_input("USN / Temp ID").strip().upper()
                     sem = st.number_input("Semester", 1, 10, 1)
+                    branch = st.text_input("Department/Branch", value="GEN")
                     photo_file = st.file_uploader("Override Photo (Leave empty to fetch from DB)", type=['jpg', 'jpeg', 'png'])
                     submit = st.form_submit_button("Generate Card", type="primary")
                     
@@ -337,7 +353,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                         photo_bytes = photo_file.read() if photo_file else fetch_student_photo(usn)
                         logo_bytes = get_college_logo()
                         
-                        card = generate_id_card(name, usn, sem, logo_bytes, photo_bytes)
+                        card = generate_id_card(name, usn, sem, branch, logo_bytes, photo_bytes)
                         st.image(card, width=350)
                         
                         buf = io.BytesIO()
@@ -357,7 +373,10 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                 if not all(col in df_print.columns for col in ['usn', 'full_name', 'current_sem']):
                     st.error("CSV missing required columns: usn, full_name, current_sem")
                 else:
-                    df_print['branch'] = df_print['usn'].apply(extract_branch)
+                    # Determine branch either from a 'branch' column or extract from USN
+                    if 'branch' not in df_print.columns:
+                        df_print['branch'] = df_print['usn'].apply(extract_branch)
+                        
                     logo_bytes = get_college_logo()
                     
                     zip_buffer = io.BytesIO()
@@ -372,14 +391,15 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                             cards = []
                             for _, row in group.iterrows():
                                 photo_bytes = fetch_student_photo(row['usn'])
-                                card = generate_id_card(row['full_name'], row['usn'], row['current_sem'], logo_bytes, photo_bytes)
+                                card = generate_id_card(row['full_name'], row['usn'], row['current_sem'], branch, logo_bytes, photo_bytes)
                                 cards.append(card)
                                 
                             a4_pages = create_a4_pages(cards)
                             
                             if a4_pages:
                                 pdf_buf = io.BytesIO()
-                                a4_pages[0].save(pdf_buf, format='PDF', save_all=True, append_images=a4_pages[1:])
+                                # 🟢 CRITICAL FIX: resolution=300 forces the PDF bounds to match real A4 size
+                                a4_pages[0].save(pdf_buf, format='PDF', save_all=True, append_images=a4_pages[1:], resolution=300)
                                 zf.writestr(f"Temp_ID_Cards_{branch}.pdf", pdf_buf.getvalue())
                                 
                             progress_bar.progress((b_idx + 1) / total_branches)
