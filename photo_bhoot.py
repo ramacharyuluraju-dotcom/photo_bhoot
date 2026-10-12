@@ -106,26 +106,27 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None, sig_byte
     draw = ImageDraw.Draw(card)
 
     # ==========================================
-    # 1. HEADER AREA (Shifted Up)
+    # 1. HEADER AREA
     # ==========================================
     if logo_bytes:
         try:
             logo = Image.open(io.BytesIO(logo_bytes)).convert('RGBA')
-            logo.thumbnail((90, 90), Image.Resampling.LANCZOS)
-            card.paste(logo, (50, 25), mask=logo)
+            logo.thumbnail((85, 85), Image.Resampling.LANCZOS)
+            card.paste(logo, (40, 25), mask=logo)
         except Exception: pass
 
-    font_college = get_cloud_font(34)
-    font_auto = get_cloud_font(20)
+    # Slightly reduced font sizes and shifted right to keep 'E' safely inside
+    font_college = get_cloud_font(30)
+    font_auto = get_cloud_font(18)
     
-    draw.text((155, 30), "AMC ENGINEERING COLLEGE", font=font_college, fill='white')
-    draw.text((155, 75), "Autonomous Institution under VTU", font=font_auto, fill='white')
+    draw.text((140, 32), "AMC ENGINEERING COLLEGE", font=font_college, fill='white')
+    draw.text((140, 75), "Autonomous Institution under VTU", font=font_auto, fill='white')
     
     # Elegant Separator Line
-    draw.line([50, 120, 550, 120], fill='white', width=2)
+    draw.line([40, 120, 560, 120], fill='white', width=2)
 
     # ==========================================
-    # 2. PHOTO & BARCODE AREA (Shifted Up)
+    # 2. PHOTO & BARCODE AREA
     # ==========================================
     draw.rectangle([50, 140, 410, 600], fill='#B0B0B0')  # Photo area
     draw.rectangle([430, 140, 550, 600], fill='#D9534F') # Red strip
@@ -133,7 +134,6 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None, sig_byte
     if photo_bytes:
         try:
             photo = Image.open(io.BytesIO(photo_bytes)).convert('RGB')
-            # Resized slightly to fit the shifted layout
             photo = photo.resize((360, 460), Image.Resampling.LANCZOS)
             card.paste(photo, (50, 140))
         except Exception: pass
@@ -145,14 +145,13 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None, sig_byte
             code128.write(rv, options={"write_text": False, "module_height": 10.0, "quiet_zone": 1.5})
             rv.seek(0)
             bc_img = Image.open(rv).convert('RGB')
-            # Fits perfectly in the updated 460px high red strip
             bc_img = bc_img.resize((440, 90), Image.Resampling.LANCZOS)
             bc_img = bc_img.rotate(90, expand=True)
             card.paste(bc_img, (445, 150))
         except Exception: pass
 
     # ==========================================
-    # 3. DETAILS BANNER (Shifted Up)
+    # 3. DETAILS BANNER
     # ==========================================
     draw.rectangle([50, 570, 550, 700], fill='#17A2B8')
     
@@ -164,27 +163,38 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None, sig_byte
     draw.text((70, 645), f"ID: {str(usn).upper()}  |  SEM: {sem}", font=font_sub, fill='white')
 
     # ==========================================
-    # 4. PRINCIPAL SIGNATURE (New Area)
+    # 4. PRINCIPAL SIGNATURE (White Background Block)
     # ==========================================
+    sig_box_w = 240
+    sig_box_h = 75
+    sig_box_x = (card_width - sig_box_w) // 2
+    sig_box_y = 715
+    
+    # Draw a crisp white box so any uploaded signature looks great, even if it has a white background!
+    draw.rectangle([sig_box_x, sig_box_y, sig_box_x + sig_box_w, sig_box_y + sig_box_h], fill='white')
+
     if sig_bytes:
         try:
             sig = Image.open(io.BytesIO(sig_bytes)).convert('RGBA')
-            # Resize signature to fit the new 100px gap
-            sig.thumbnail((200, 75), Image.Resampling.LANCZOS)
-            sig_x = (card_width - sig.width) // 2
-            card.paste(sig, (sig_x, 715), mask=sig)
+            sig.thumbnail((230, 65), Image.Resampling.LANCZOS)
+            
+            # Center the signature inside the white block
+            paste_x = sig_box_x + (sig_box_w - sig.width) // 2
+            paste_y = sig_box_y + (sig_box_h - sig.height) // 2
+            
+            card.paste(sig, (paste_x, paste_y), mask=sig)
         except Exception: pass
 
     # ==========================================
     # 5. FOOTER
     # ==========================================
-    font_footer = get_cloud_font(20)
+    font_footer = get_cloud_font(18)
     footer_text = "www.amcgroup.edu.in"
     try:
         text_bbox = draw.textbbox((0, 0), footer_text, font=font_footer)
         text_x = (card_width - (text_bbox[2] - text_bbox[0])) // 2
     except: text_x = 200 
-    draw.text((text_x, 800), footer_text, font=font_footer, fill='white')
+    draw.text((text_x, 810), footer_text, font=font_footer, fill='white')
 
     return card
 
@@ -378,7 +388,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                     usn = st.text_input("USN / Temp ID").strip().upper()
                     sem = st.number_input("Semester", 1, 10, 1)
                     photo_file = st.file_uploader("Override Photo (Leave empty to fetch from DB)", type=['jpg', 'jpeg', 'png'])
-                    sig_file = st.file_uploader("Principal Signature (Optional, PNG)", type=['png', 'jpg', 'jpeg'])
+                    sig_file = st.file_uploader("Principal Signature (Optional)", type=['png', 'jpg', 'jpeg'])
                     submit = st.form_submit_button("Generate Card", type="primary")
                     
             with c2:
@@ -401,7 +411,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
             st.info("Upload a CSV containing `usn`, `full_name`, and `current_sem`. The system automatically fetches photos from Supabase, groups students by branch, and generates ready-to-print A4 PDF sheets.")
             
             csv_file = st.file_uploader("Upload Master CSV", type=['csv'])
-            sig_file = st.file_uploader("Principal Signature (Optional, transparent PNG)", type=['png', 'jpg', 'jpeg'])
+            sig_file = st.file_uploader("Principal Signature (Optional, transparent PNG or white JPG)", type=['png', 'jpg', 'jpeg'])
             
             if csv_file and st.button("🚀 Execute Bulk Print Generation", type="primary"):
                 df_print = pd.read_csv(csv_file)
