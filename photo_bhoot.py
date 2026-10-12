@@ -52,18 +52,19 @@ def get_college_logo():
     return None
 
 def fetch_student_photo(usn):
-    """Robustly fetch photo checking multiple extension permutations"""
+    """
+    Lightning-fast fetch: Since our upload portal ALWAYS saves as .jpg,
+    we only make ONE network request to Supabase, eliminating timeout delays.
+    """
     if not supabase: return None
     clean_usn = re.sub(r'[^A-Z0-9]', '', str(usn).upper())
     
-    extensions = ['.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG']
-    for ext in extensions:
-        try:
-            res = supabase.storage.from_("StakeHolders_Photos").download(f"{clean_usn}{ext}")
-            if res and len(res) > 0: 
-                return res
-        except Exception: 
-            continue
+    try:
+        res = supabase.storage.from_("StakeHolders_Photos").download(f"{clean_usn}.jpg")
+        if res and len(res) > 0: 
+            return res
+    except Exception:
+        pass
     return None
 
 def extract_branch(usn):
@@ -74,10 +75,26 @@ def extract_branch(usn):
 # 3. ID CARD GENERATOR ENGINE
 # ==========================================
 def get_font(size):
-    try: return ImageFont.truetype("arial.ttf", size)
-    except IOError:
-        try: return ImageFont.truetype("Helvetica.ttf", size)
-        except IOError: return ImageFont.load_default()
+    """
+    CRITICAL FIX: Checks explicit Linux font paths so Streamlit Cloud
+    actually applies the requested font sizes instead of falling back to the tiny default.
+    """
+    font_paths = [
+        "arial.ttf", 
+        "Helvetica.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf"
+    ]
+    
+    for path in font_paths:
+        try:
+            return ImageFont.truetype(path, size)
+        except IOError:
+            continue
+            
+    return ImageFont.load_default()
 
 def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
     card_width, card_height = 600, 850
@@ -105,8 +122,8 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
             card.paste(logo, (logo_x, 60), mask=logo)
         except Exception: pass
 
-    # Vertical College Name (Increased Font Size)
-    font_college = get_font(34)
+    # Vertical College Name (Massive Font)
+    font_college = get_font(38)
     college_text = "AMC ENGINEERING COLLEGE"
     try:
         text_bbox = draw.textbbox((0,0), college_text, font=font_college)
@@ -123,8 +140,8 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
     # Teal Banner
     draw.rectangle([50, 460, 550, 600], fill='#17A2B8')
     
-    font_title = get_font(46)  # Larger Student Name
-    font_sub = get_font(24)    # Meta data font
+    font_title = get_font(42)  
+    font_sub = get_font(26)    
     
     display_name = str(name).upper()[:19] 
     draw.text((70, 470), display_name, font=font_title, fill='white')
@@ -143,7 +160,7 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
         except Exception: pass
 
     # Footer
-    font_footer = get_font(20)
+    font_footer = get_font(22)
     footer_text = "www.amcgroup.edu.in"
     try:
         text_bbox = draw.textbbox((0, 0), footer_text, font=font_footer)
@@ -154,20 +171,23 @@ def generate_id_card(name, usn, sem, branch, logo_bytes=None, photo_bytes=None):
     return card
 
 def create_a4_pages(cards):
-    """Properly formats 2x4 grid for standard 300DPI A4 sheets"""
+    """
+    NEW LAYOUT: 3 Columns x 4 Rows (12 Cards per Page)
+    Maximizes standard 300DPI A4 sheets without shrinking the cards.
+    """
     A4_WIDTH, A4_HEIGHT = 2480, 3508
     pages = []
     
-    # Perfectly centered grid mathematics for 600x850 cards on 2480x3508 canvas
-    x_offsets = [590, 1290] 
-    y_offsets = [24, 894, 1764, 2634] 
+    # Mathematical offsets for 3 columns and 4 rows of 600x850 cards
+    x_offsets = [200, 940, 1680] 
+    y_offsets = [40, 900, 1760, 2620] 
     
-    for i in range(0, len(cards), 8):
-        chunk = cards[i:i+8]
+    for i in range(0, len(cards), 12):
+        chunk = cards[i:i+12]
         a4 = Image.new('RGB', (A4_WIDTH, A4_HEIGHT), 'white')
         for idx, card in enumerate(chunk):
-            col = idx % 2
-            row = idx // 2
+            col = idx % 3
+            row = idx // 3
             a4.paste(card, (x_offsets[col], y_offsets[row]))
         pages.append(a4)
     return pages
@@ -362,7 +382,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
 
         # --- TAB 3: BULK TEMP ID ENGINE ---
         with tab3:
-            st.subheader("Bulk Branch-Wise Print Engine (A4 2x4 Grid)")
+            st.subheader("Bulk Branch-Wise Print Engine (A4 3x4 Grid)")
             st.info("Upload a CSV containing `usn`, `full_name`, and `current_sem`. The system automatically fetches photos from Supabase, groups students by branch, and generates ready-to-print A4 PDF sheets.")
             
             csv_file = st.file_uploader("Upload Master CSV", type=['csv'])
@@ -373,7 +393,6 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                 if not all(col in df_print.columns for col in ['usn', 'full_name', 'current_sem']):
                     st.error("CSV missing required columns: usn, full_name, current_sem")
                 else:
-                    # Determine branch either from a 'branch' column or extract from USN
                     if 'branch' not in df_print.columns:
                         df_print['branch'] = df_print['usn'].apply(extract_branch)
                         
@@ -398,7 +417,7 @@ elif mode == "👑 AMC_COE_ADMIN Console":
                             
                             if a4_pages:
                                 pdf_buf = io.BytesIO()
-                                # 🟢 CRITICAL FIX: resolution=300 forces the PDF bounds to match real A4 size
+                                # Resolution=300 forces the PDF bounds to match real A4 size exactly
                                 a4_pages[0].save(pdf_buf, format='PDF', save_all=True, append_images=a4_pages[1:], resolution=300)
                                 zf.writestr(f"Temp_ID_Cards_{branch}.pdf", pdf_buf.getvalue())
                                 
