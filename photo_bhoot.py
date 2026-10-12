@@ -126,14 +126,17 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
             card.paste(logo, (logo_x, 60), mask=logo)
         except Exception: pass
 
-    # Vertical College Name - Font size reduced to prevent overlap
-    font_college = get_cloud_font(26)
-    college_text = "AMC ENGINEERING COLLEGE"
+    # Vertical College Name - Split into two lines for larger font
+    font_college = get_cloud_font(32)
+    # Rotating 270 degrees CCW (90 CW) means the bottom horizontal line becomes the left vertical line.
+    # Therefore, "AMC ENGINEERING" goes on the bottom, "COLLEGE" goes on top to read correctly.
+    college_text = "COLLEGE\nAMC ENGINEERING"
     try:
-        text_bbox = draw.textbbox((0,0), college_text, font=font_college)
-        tw, th = text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1]
+        text_bbox = draw.multiline_textbbox((0,0), college_text, font=font_college, align="center")
+        tw = int(text_bbox[2] - text_bbox[0])
+        th = int(text_bbox[3] - text_bbox[1])
         txt_img = Image.new('RGBA', (tw + 10, th + 10), (255, 255, 255, 0))
-        ImageDraw.Draw(txt_img).text((0, 0), college_text, font=font_college, fill='white')
+        ImageDraw.Draw(txt_img).multiline_text((5, 5), college_text, font=font_college, fill='white', align='center')
         
         rotated_txt = txt_img.rotate(270, expand=True)
         rt_w, rt_h = rotated_txt.size
@@ -149,7 +152,6 @@ def generate_id_card(name, usn, sem, logo_bytes=None, photo_bytes=None):
     
     display_name = str(name).upper()[:19] 
     draw.text((70, 470), display_name, font=font_title, fill='white')
-    # Removed DEPT from the banner string
     draw.text((70, 545), f"ID: {str(usn).upper()}  |  SEM: {sem}", font=font_sub, fill='white')
 
     # Barcode
